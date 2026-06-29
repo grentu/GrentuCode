@@ -99,12 +99,6 @@ export function ProviderSetup({
     }
   }, []);
 
-  useEffect(() => {
-    if (step === 3 && !scanning && models.length === 0 && !manualMode && !scanError) {
-      doScan(values[1].trim(), values[2].trim());
-    }
-  }, [step, scanning, models, manualMode, scanError, doScan, values]);
-
   const handleConfirm = useCallback(() => {
     const finalModels = manualMode
       ? manualModels.split(",").map((m) => m.trim()).filter(Boolean)
@@ -235,6 +229,7 @@ export function ProviderSetup({
       }
 
       setStep(3);
+      doScan(newValues[1].trim(), newValues[2].trim());
       return;
     }
 

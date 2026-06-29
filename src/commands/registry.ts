@@ -19,7 +19,7 @@ export interface CommandContext {
 
 export interface CommandResult {
   output?: string;
-  action?: "clear" | "exit" | "theme-change" | "provider-change" | "provider-add" | "provider-remove" | "provider-menu" | "sessions-list" | "session-resume" | "session-export";
+  action?: "clear" | "exit" | "theme-change" | "provider-change" | "provider-add" | "provider-remove" | "provider-menu" | "model-menu" | "sessions-list" | "session-resume" | "session-export";
   data?: string;
 }
 
@@ -37,7 +37,7 @@ const helpCommand: CommandHandler = (_args, ctx) => {
     "Available commands:",
     "  /help     Show this help message",
     "  /clear    Clear chat history",
-    `  /model    Show or change model (current: ${ctx.model})`,
+    `  /model    Show all models (interactive menu) or change (current: ${ctx.model})`,
     `  /provider Show, change, add or remove providers (current: ${ctx.provider})`,
     "            /provider             Open interactive provider menu",
     "            /provider add         Add a custom OpenAI-compatible provider",
@@ -65,11 +65,7 @@ const clearCommand: CommandHandler = (_args, ctx) => {
 
 const modelCommand: CommandHandler = (args, ctx) => {
   if (!args.trim()) {
-    const models = ctx.getProviderModels(ctx.provider);
-    const list = models.map((m) => `  ${m}`).join("\n");
-    return {
-      output: `Current model: ${ctx.model}\n\nAvailable models for provider '${ctx.provider}':\n${list}\n\nTo change: /model <name>`,
-    };
+    return { action: "model-menu" };
   }
   ctx.setModel(args.trim());
   return { output: `Model changed to: ${args.trim()}` };

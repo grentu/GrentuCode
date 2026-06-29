@@ -12,6 +12,7 @@ import { RemoveProviderMenu } from "./RemoveProviderMenu";
 import { ProviderSetup } from "./ProviderSetup";
 import type { ProviderSetupData } from "./ProviderSetup";
 import { ApiKeyInput } from "./ApiKeyInput";
+import { ModelMenu } from "./ModelMenu";
 import { PermissionPrompt } from "./PermissionPrompt";
 import { executeCommand, type CommandContext } from "../commands/registry";
 import {
@@ -35,7 +36,7 @@ import {
 import * as path from "path";
 import * as fs from "fs";
 
-type OverlayMode = "menu" | "remove" | "setup" | "apikey" | null;
+type OverlayMode = "menu" | "remove" | "setup" | "apikey" | "model-menu" | null;
 
 interface PendingPermission {
   toolName: string;
@@ -256,6 +257,14 @@ function GrentuApp() {
   const handleMenuRemove = useCallback(() => setOverlay("remove"), []);
   const handleMenuCancel = useCallback(() => setOverlay(null), []);
 
+  const handleModelMenuSelect = useCallback((provider: string, model: string) => {
+    handleSetProvider(provider, model);
+    setOverlay(null);
+    setSystemMsg(`Switched to ${provider}/${model}`);
+  }, [handleSetProvider]);
+
+  const handleModelMenuCancel = useCallback(() => setOverlay(null), []);
+
   const handleRemoveProviderMenuRemove = useCallback((name: string) => {
     handleRemoveProvider(name);
     setOverlay(null);
@@ -324,6 +333,11 @@ function GrentuApp() {
         if (cmdResult.action === "exit") return;
         if (cmdResult.action === "provider-menu") {
           setOverlay("menu");
+          setSystemMsg(null);
+          return;
+        }
+        if (cmdResult.action === "model-menu") {
+          setOverlay("model-menu");
           setSystemMsg(null);
           return;
         }
@@ -565,6 +579,24 @@ function GrentuApp() {
       providerName: apiKeyTarget,
       onComplete: handleApiKeyComplete,
       onCancel: handleApiKeyCancel,
+    });
+  }
+
+  if (overlay === "model-menu") {
+    return React.createElement(ModelMenu, {
+      config,
+      onSelect: handleModelMenuSelect,
+      onCancel: handleModelMenuCancel,
+      getProviderModels: (name: string) => {
+        const providerConfig = config.providers?.[name];
+        if (providerConfig?.models && providerConfig.models.length > 0) return providerConfig.models;
+        const provider = createProvider(name, config);
+        return provider ? provider.models : [];
+      },
+      primaryColor: theme.primary,
+      secondaryColor: theme.secondary,
+      mutedColor: theme.muted,
+      accentColor: theme.accent,
     });
   }
 
