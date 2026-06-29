@@ -88,48 +88,11 @@ export async function scanCustomModels(
   endpoint: string,
   apiKey: string,
 ): Promise<string[]> {
-  let base = endpoint.trim().replace(/\/+$/, "");
-  if (!base.startsWith("http://") && !base.startsWith("https://")) {
-    base = "https://" + base;
-  }
-
-  const variants: string[] = [base];
-
-  const withoutV1 = base.replace(/\/v1\/?$/, "");
-  const withoutInference = base.replace(/\/inference\/v1\/?$/, "");
-
-  variants.push(base + "/v1");
-  variants.push(base + "/inference/v1");
-  variants.push(withoutV1);
-  variants.push(withoutV1 + "/v1");
-  variants.push(withoutV1 + "/inference/v1");
-  variants.push(withoutInference);
-  variants.push(withoutInference + "/inference/v1");
-  variants.push(withoutInference + "/v1");
-
-  const seen = new Set<string>();
-  const unique = variants.filter((ep) => {
-    if (seen.has(ep)) return false;
-    seen.add(ep);
-    return true;
-  });
-
-  let lastError: Error | null = null;
-
-  for (const ep of unique) {
-    try {
-      const client = new OpenAI({ apiKey, baseURL: ep });
-      const response = await client.models.list();
-      const models = response.data
-        .map((m) => m.id)
-        .filter((id): id is string => Boolean(id))
-        .sort((a, b) => a.localeCompare(b));
-      if (models.length > 0) return models;
-    } catch (err) {
-      lastError = err instanceof Error ? err : new Error(String(err));
-    }
-  }
-
-  if (lastError) throw lastError;
-  return [];
+  const client = new OpenAI({ apiKey, baseURL: endpoint });
+  const response = await client.models.list();
+  const models = response.data
+    .map((m) => m.id)
+    .filter((id): id is string => Boolean(id))
+    .sort((a, b) => a.localeCompare(b));
+  return models;
 }
