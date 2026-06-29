@@ -1,5 +1,63 @@
-import { GoogleGenerativeAI, type Content } from "@google/generative-ai";
-import type { ChatMessageLLM, StreamCallbacks, LLMProvider, StreamParams } from "./base";
+import { GoogleGenerativeAI, type Content, SchemaType } from "@google/generative-ai";
+import type { ChatMessageLLM, StreamCallbacks, LLMProvider, StreamParams, ToolCall } from "./base";
+import type { ToolSchema } from "../tools/base";
+
+function toGoogleMessages(messages: ChatMessageLLM[]): { systemInstruction?: string; contents: Content[] } {
+  const systemMessage = messages.find((m) => m.role === "system");
+  const contents: Content[] = [];
+
+  for (const m of messages) {
+    if (m.role === "system") continue;
+
+    if (m.role === "tool") {
+      contents.push({
+        role: "function",
+        parts: [{ functionResponse: { name: m.name ?? "tool", response: { result: m.content } } }],
+      });
+      continue;
+    }
+
+    if (m.role === "assistant" && m.toolCalls && m.toolCalls.length > 0) {
+      const parts: Content["parts"] = [];
+      if (m.content) parts.push({ text: m.content });
+      for (const tc of m.toolCalls) {
+        parts.push({
+          functionCall: {
+            name: tc.name,
+            args: JSON.parse(tc.arguments || "{}"),
+          },
+        });
+      }
+      contents.push({ role: "model", parts });
+      continue;
+    }
+
+    contents.push({
+      role: m.role === "assistant" ? "model" : "user",
+      parts: [{ text: m.content }],
+    });
+  }
+
+  return {
+    ...(systemMessage && { systemInstruction: systemMessage.content }),
+    contents,
+  };
+}
+
+function toGoogleTools(tools?: ToolSchema[]) {
+  if (!tools || tools.length === 0) return undefined;
+  return [{
+    functionDeclarations: tools.map((t) => ({
+      name: t.name,
+      description: t.description,
+      parameters: {
+        type: SchemaType.OBJECT,
+        properties: t.parameters.properties ?? {},
+        required: t.parameters.required ?? [],
+      },
+    })),
+  }] as unknown as [{ functionDeclarations: unknown[] }];
+}
 
 export class GoogleProvider implements LLMProvider {
   name = "google";
@@ -19,33 +77,17 @@ export class GoogleProvider implements LLMProvider {
     return this.client;
   }
 
-  private convertMessages(messages: ChatMessageLLM[]): {
-    systemInstruction?: string;
-    contents: Content[];
-  } {
-    const systemMessage = messages.find((m) => m.role === "system");
-    const contents: Content[] = messages
-      .filter((m) => m.role !== "system")
-      .map((m) => ({
-        role: m.role === "assistant" ? "model" : "user",
-        parts: [{ text: m.content }],
-      }));
-
-    return {
-      ...(systemMessage && { systemInstruction: systemMessage.content }),
-      contents,
-    };
-  }
-
   async stream(
     messages: ChatMessageLLM[],
     model: string,
     callbacks: StreamCallbacks,
     params?: StreamParams,
+    tools?: ToolSchema[],
   ): Promise<void> {
     try {
       const client = this.getClient();
-      const { systemInstruction, contents } = this.convertMessages(messages);
+      const { systemInstruction, contents } = toGoogleMessages(messages);
+      const googleTools = toGoogleTools(tools);
 
       const modelInstance = client.getGenerativeModel({
         model,
@@ -54,27 +96,40 @@ export class GoogleProvider implements LLMProvider {
           ...(params?.temperature !== undefined && { temperature: params.temperature }),
           ...(params?.maxTokens !== undefined && { maxOutputTokens: params.maxTokens }),
         },
+        ...(googleTools && { tools: googleTools as never }),
       });
 
       const result = await modelInstance.generateContentStream({ contents });
 
       let fullText = "";
-      let aborted = false;
+      const toolCalls: ToolCall[] = [];
+
       for await (const chunk of result.stream) {
-        if (callbacks.signal?.aborted) {
-          aborted = true;
-          break;
-        }
-        const token = chunk.text();
-        if (token) {
-          fullText += token;
-          callbacks.onToken(token);
+        if (callbacks.signal?.aborted) break;
+
+        const candidates = chunk.candidates;
+        if (!candidates || candidates.length === 0) continue;
+
+        for (const candidate of candidates) {
+          if (!candidate.content?.parts) continue;
+          for (const part of candidate.content.parts) {
+            if (part.text) {
+              fullText += part.text;
+              callbacks.onToken(part.text);
+            }
+            if (part.functionCall) {
+              toolCalls.push({
+                id: `call_${toolCalls.length + 1}`,
+                name: part.functionCall.name,
+                arguments: JSON.stringify(part.functionCall.args ?? {}),
+              });
+            }
+          }
         }
       }
 
-      if (!aborted) {
-        callbacks.onComplete(fullText);
-      }
+      const finalToolCalls = toolCalls.length > 0 ? toolCalls : undefined;
+      callbacks.onComplete(fullText, finalToolCalls);
     } catch (err) {
       callbacks.onError(err instanceof Error ? err : new Error(String(err)));
     }

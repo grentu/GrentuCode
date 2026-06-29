@@ -1,5 +1,46 @@
 import OpenAI from "openai";
-import type { ChatMessageLLM, StreamCallbacks, LLMProvider, StreamParams } from "./base";
+import type { ChatMessageLLM, StreamCallbacks, LLMProvider, StreamParams, ToolCall } from "./base";
+import type { ToolSchema } from "../tools/base";
+
+function toOpenAIMessages(messages: ChatMessageLLM[]) {
+  return messages.map((m) => {
+    if (m.role === "tool") {
+      return {
+        role: "tool" as const,
+        content: m.content,
+        tool_call_id: m.toolCallId ?? "",
+      };
+    }
+    if (m.role === "assistant" && m.toolCalls && m.toolCalls.length > 0) {
+      return {
+        role: "assistant" as const,
+        content: m.content || null,
+        tool_calls: m.toolCalls.map((tc) => ({
+          id: tc.id,
+          type: "function" as const,
+          function: { name: tc.name, arguments: tc.arguments },
+        })),
+      };
+    }
+    return { role: m.role as "system" | "user" | "assistant", content: m.content };
+  });
+}
+
+function toOpenAITools(tools?: ToolSchema[]) {
+  if (!tools || tools.length === 0) return undefined;
+  return tools.map((t) => ({
+    type: "function" as const,
+    function: {
+      name: t.name,
+      description: t.description,
+      parameters: {
+        type: "object",
+        properties: t.parameters.properties ?? {},
+        required: t.parameters.required ?? [],
+      },
+    },
+  }));
+}
 
 export class LocalProvider implements LLMProvider {
   name = "local";
@@ -27,26 +68,47 @@ export class LocalProvider implements LLMProvider {
     model: string,
     callbacks: StreamCallbacks,
     params?: StreamParams,
+    tools?: ToolSchema[],
   ): Promise<void> {
     try {
       const client = this.getClient();
+      const openaiTools = toOpenAITools(tools);
       const stream = await client.chat.completions.create({
         model,
-        messages,
+        messages: toOpenAIMessages(messages),
         stream: true,
+        ...(openaiTools && { tools: openaiTools }),
         ...(params?.temperature !== undefined && { temperature: params.temperature }),
         ...(params?.maxTokens !== undefined && { max_tokens: params.maxTokens }),
       }, { signal: callbacks.signal });
 
       let fullText = "";
+      const toolCallMap = new Map<number, { id: string; name: string; arguments: string }>();
+
       for await (const chunk of stream) {
-        const token = chunk.choices[0]?.delta?.content;
-        if (token) {
-          fullText += token;
-          callbacks.onToken(token);
+        const delta = chunk.choices[0]?.delta;
+        if (!delta) continue;
+        if (delta.content) {
+          fullText += delta.content;
+          callbacks.onToken(delta.content);
+        }
+        if (delta.tool_calls) {
+          for (const tc of delta.tool_calls) {
+            const idx = tc.index ?? 0;
+            const existing = toolCallMap.get(idx) ?? { id: "", name: "", arguments: "" };
+            if (tc.id) existing.id = tc.id;
+            if (tc.function?.name) existing.name += tc.function.name;
+            if (tc.function?.arguments) existing.arguments += tc.function.arguments;
+            toolCallMap.set(idx, existing);
+          }
         }
       }
-      callbacks.onComplete(fullText);
+
+      const toolCalls: ToolCall[] | undefined = toolCallMap.size > 0
+        ? Array.from(toolCallMap.values()).filter((tc) => tc.name)
+        : undefined;
+
+      callbacks.onComplete(fullText, toolCalls);
     } catch (err) {
       callbacks.onError(err instanceof Error ? err : new Error(String(err)));
     }

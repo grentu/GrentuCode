@@ -92,19 +92,20 @@
 
 ---
 
-## Milestone 3 — Agent Loop & Tools
+## Milestone 3 — Agent Loop & Tools ✅
 
 **Цель:** Превратить чат-бот в агента с инструментами.
 
-- [ ] Agent loop: LLM → tool call → result → LLM (цикл до завершения)
-- [ ] Tool: `read_file` — чтение файлов
-- [ ] Tool: `write_file` — запись файлов
-- [ ] Tool: `edit_file` — точечное редактирование
-- [ ] Tool: `run_command` — выполнение shell-команд
-- [ ] Tool: `search` — поиск по файлам (grep/glob)
-- [ ] Система разрешений (auto-approve, ask, deny) — как Claude Code
-- [ ] Визуализация tool calls в TUI (как Claude Code: файл → правки)
-- [ ] Контекст проекта: `.grentu/` папка, системный промпт с структурой проекта
+- [x] Agent loop: LLM → tool call → result → LLM (цикл до завершения, max 20 iterations)
+- [x] Tool: `read_file` — чтение файлов (auto-approve, line numbers, max 1MB)
+- [x] Tool: `write_file` — запись файлов (permission required, auto-create dirs)
+- [x] Tool: `edit_file` — точечное редактирование (permission required, replace_all)
+- [x] Tool: `run_command` — выполнение shell-команд (permission required, timeout)
+- [x] Tool: `search` — поиск по файлам (auto-approve, content/files modes, regex)
+- [x] Система разрешений (auto-approve, ask, deny) — PermissionPrompt UI
+- [x] Визуализация tool calls в TUI (⚡ tool name, args, result/error)
+- [x] Контекст проекта: auto-detect project root, system prompt with structure
+- [x] Provider-agnostic tool calling (OpenAI function calling, Anthropic tool_use, Google functionCall)
 - [ ] Token-менеджмент: подсчёт контекста, автоматическое сжатие истории
 
 ---
