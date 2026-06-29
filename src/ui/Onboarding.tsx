@@ -26,7 +26,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
     Box,
     { flexDirection: "column", gap: 1 },
     React.createElement(Text, { bold: true }, "Welcome to Grentu Code!"),
-    React.createElement(Text, { dimColor: true }, "Choose your color theme (↑/↓ or 1-4, Enter to confirm):"),
+    React.createElement(Text, { dimColor: true }, `Choose your color theme (↑/↓ or 1-${THEME_LIST.length}, Enter to confirm):`),
     React.createElement(
       Box,
       { flexDirection: "column", gap: 0 },

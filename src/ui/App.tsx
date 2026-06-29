@@ -607,6 +607,8 @@ function GrentuApp() {
       primaryColor: theme.primary,
       secondaryColor: theme.secondary,
       mutedColor: theme.muted,
+      provider: config.provider,
+      model: config.model,
     }),
     React.createElement(Messages, {
       messages,
@@ -619,12 +621,21 @@ function GrentuApp() {
       ? React.createElement(
           Box,
           { flexDirection: "column", marginTop: 1 },
-          React.createElement(Text, { color: theme.secondary, bold: true }, "◆ Grentu"),
-          React.createElement(Text, { wrap: "wrap" }, streamingText),
+          React.createElement(
+            Box,
+            { gap: 1 },
+            React.createElement(Text, { color: theme.secondary, bold: true }, "┌─ Grentu"),
+            React.createElement(Text, { color: theme.muted, dimColor: true }, "typing…" ),
+          ),
+          React.createElement(Text, { wrap: "wrap" }, "  " + streamingText),
         )
       : null,
     isStreaming && !streamingText && !pendingPermission
-      ? React.createElement(Spinner, { color: theme.primary })
+      ? React.createElement(
+          Box,
+          { marginTop: 1 },
+          React.createElement(Spinner, { color: theme.primary, label: "Thinking…" }),
+        )
       : null,
     pendingPermission
       ? React.createElement(PermissionPrompt, {
@@ -641,7 +652,12 @@ function GrentuApp() {
       ? React.createElement(
           Box,
           { marginTop: 1 },
-          React.createElement(Text, { color: theme.muted, dimColor: true }, systemMsg),
+          React.createElement(
+            Text,
+            { color: theme.muted, dimColor: true },
+            React.createElement(Text, { color: theme.accent, dimColor: true }, "ℹ "),
+            systemMsg,
+          ),
         )
       : null,
     React.createElement(Input, {

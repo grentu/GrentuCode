@@ -33,10 +33,19 @@ export function Input({ primaryColor, mutedColor, disabled, onSubmit, onCancel }
       return;
     }
 
+    if (key.escape) {
+      setValue("");
+      return;
+    }
+
     if (input && !key.ctrl && !key.meta && !key.shift && input.length > 0) {
-      setValue((v) => v + input);
+      if (input.charCodeAt(0) >= 0x20) {
+        setValue((v) => v + input);
+      }
     }
   });
+
+  const showValue = disabled ? value + " (processing...)" : value;
 
   return React.createElement(
     Box,
@@ -45,9 +54,9 @@ export function Input({ primaryColor, mutedColor, disabled, onSubmit, onCancel }
     React.createElement(
       Text,
       { color: disabled ? mutedColor : undefined },
-      value,
+      showValue,
       disabled
-        ? React.createElement(Text, { dimColor: true }, " (processing...)")
+        ? null
         : React.createElement(Text, { color: primaryColor }, "▋"),
     ),
   );

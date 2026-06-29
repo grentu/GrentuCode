@@ -1,6 +1,6 @@
 {
   "name": "@grentu/grentu",
-  "version": "0.7.5",
+  "version": "0.8.0",
   "description": "Grentu Code — AI coding agent for the terminal",
   "type": "module",
   "bin": {
