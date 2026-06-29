@@ -7,6 +7,12 @@ export interface StreamCallbacks {
   onToken: (token: string) => void;
   onComplete: (fullText: string) => void;
   onError: (error: Error) => void;
+  signal?: AbortSignal;
+}
+
+export interface StreamParams {
+  temperature?: number;
+  maxTokens?: number;
 }
 
 export interface LLMProvider {
@@ -16,5 +22,6 @@ export interface LLMProvider {
     messages: ChatMessageLLM[],
     model: string,
     callbacks: StreamCallbacks,
+    params?: StreamParams,
   ): Promise<void>;
 }

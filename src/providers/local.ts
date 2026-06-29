@@ -1,23 +1,21 @@
 import OpenAI from "openai";
 import type { ChatMessageLLM, StreamCallbacks, LLMProvider, StreamParams } from "./base";
 
-export class OpenAIProvider implements LLMProvider {
-  name = "openai";
-  models = ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo", "o1", "o1-mini", "o3-mini"];
+export class LocalProvider implements LLMProvider {
+  name = "local";
+  models = ["llama3.1", "qwen2.5", "deepseek-r1", "custom"];
 
   private client: OpenAI | null = null;
-  private apiKey: string;
-  private baseUrl?: string;
+  private baseUrl: string;
 
-  constructor(apiKey: string, baseUrl?: string) {
-    this.apiKey = apiKey;
-    this.baseUrl = baseUrl;
+  constructor(baseUrl?: string) {
+    this.baseUrl = baseUrl ?? "http://localhost:11434/v1";
   }
 
   private getClient(): OpenAI {
     if (!this.client) {
       this.client = new OpenAI({
-        apiKey: this.apiKey,
+        apiKey: "local",
         baseURL: this.baseUrl,
       });
     }

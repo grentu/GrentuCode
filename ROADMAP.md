@@ -73,17 +73,22 @@
 
 ---
 
-## Milestone 2 — Multi-Provider & Config
+## Milestone 2 — Multi-Provider & Config ✅
 
 **Цель:** Поддержка нескольких LLM-провайдеров с нативными SDK.
 
-- [ ] Anthropic-провайдер (Messages API, стриминг)
-- [ ] Google-провайдер (Gemini API, стриминг)
-- [ ] Локальный провайдер (Ollama / llama.cpp, OpenAI-совместимый endpoint)
-- [ ] Команда `/provider` — выбор активного провайдера
-- [ ] Расширенный config: провайдеры, модели, параметры (temperature, max_tokens)
-- [ ] Fallback-цепочка провайдеров (опционально)
-- [ ] Поддержка кастомного base_url для OpenAI-совместимых API
+- [x] Anthropic-провайдер (Messages API, стриминг, system prompt отдельно)
+- [x] Google-провайдер (Gemini API, стриминг, systemInstruction)
+- [x] Локальный провайдер (Ollama / llama.cpp, OpenAI-совместимый endpoint)
+- [x] Provider Registry — фабрика createProvider(name, config)
+- [x] Команда `/provider` — выбор активного провайдера (+ алиас `/p`)
+- [x] Расширенный config: per-provider настройки, temperature, maxTokens, fallback
+- [x] Fallback-цепочка провайдеров (primary → fallback → auto-discover)
+- [x] Поддержка кастомного base_url для OpenAI-совместимых API
+- [x] AbortController — отмена стриминга по Ctrl+C
+- [x] Миграция конфига v1→v2 (backward compatible)
+- [x] File permissions 0o600 для config.json (безопасность API-ключей)
+- [x] Единый источник версии (src/version.ts)
 
 ---
 

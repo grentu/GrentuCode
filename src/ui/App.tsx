@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { Text, Box, render, useApp, useInput } from "ink";
 import { Banner } from "./Banner";
 import { Onboarding } from "./Onboarding";
@@ -12,13 +12,11 @@ import {
   configExists,
   loadConfig,
   saveConfig,
-  updateConfig,
   type GrentuConfig,
 } from "../config";
-import { OpenAIProvider } from "../providers/openai";
-import type { LLMProvider, ChatMessageLLM } from "../providers/base";
-
-const GRENTU_VERSION = "v0.1.0";
+import { createProvider } from "../providers/registry";
+import type { LLMProvider, ChatMessageLLM, StreamParams } from "../providers/base";
+import { VERSION } from "../version";
 
 function GrentuApp() {
   const { exit: exitApp } = useApp();
@@ -28,6 +26,13 @@ function GrentuApp() {
   const [streamingText, setStreamingText] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [systemMsg, setSystemMsg] = useState<string | null>(null);
+
+  const messagesRef = useRef<ChatMessage[]>([]);
+  const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
 
   const theme = getTheme(config.theme);
 
@@ -57,15 +62,52 @@ function GrentuApp() {
     });
   }, []);
 
-  const cmdCtx: CommandContext = {
+  const handleSetProvider = useCallback((name: string, model?: string) => {
+    setConfig((c) => {
+      let updated = { ...c, provider: name };
+
+      if (model) {
+        updated = { ...updated, model };
+      } else {
+        const providerModels = c.providers?.[name]?.models;
+        if (providerModels && providerModels.length > 0) {
+          updated = { ...updated, model: providerModels[0] };
+        } else {
+          const provider = createProvider(name, c);
+          if (provider && provider.models.length > 0) {
+            const defaultModel = c.providers?.[name]?.defaultModel;
+            const targetModel = defaultModel && provider.models.includes(defaultModel)
+              ? defaultModel
+              : provider.models[0];
+            updated = { ...updated, model: targetModel };
+          }
+        }
+      }
+
+      saveConfig(updated);
+      return updated;
+    });
+  }, []);
+
+  const cmdCtx: CommandContext = useMemo(() => ({
     model: config.model,
     provider: config.provider,
     theme: config.theme,
+    availableProviders: ["openai", "anthropic", "google", "local"],
+    getProviderModels: (name: string) => {
+      const providerConfig = config.providers?.[name];
+      if (providerConfig?.models && providerConfig.models.length > 0) {
+        return providerConfig.models;
+      }
+      const provider = createProvider(name, config);
+      return provider ? provider.models : [];
+    },
     setTheme: handleSetTheme,
     setModel: handleSetModel,
+    setProvider: handleSetProvider,
     clearMessages: handleClear,
     exit: handleExit,
-  };
+  }), [config.model, config.provider, config.theme, config.providers, handleSetTheme, handleSetModel, handleSetProvider, handleClear, handleExit]);
 
   const handleOnboardingComplete = useCallback((themeName: string) => {
     const newConfig = { ...config, theme: themeName };
@@ -74,19 +116,45 @@ function GrentuApp() {
     setNeedsOnboarding(false);
   }, [config]);
 
-  const getProvider = useCallback((): LLMProvider | null => {
-    const apiKey = config.apiKeys.openai ?? process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      setSystemMsg(
-        "No API key found. Set OPENAI_API_KEY env var or configure in ~/.grentu/config.json",
-      );
-      return null;
+  const getProviderChain = useCallback((): LLMProvider[] => {
+    const chain: LLMProvider[] = [];
+    const tried = new Set<string>();
+
+    const primary = createProvider(config.provider, config);
+    if (primary) {
+      chain.push(primary);
+      tried.add(config.provider);
     }
-    return new OpenAIProvider(apiKey, config.baseUrl);
-  }, [config.apiKeys.openai, config.baseUrl]);
+
+    const fallbackList = config.fallback ?? [];
+    for (const name of fallbackList) {
+      if (tried.has(name)) continue;
+      const provider = createProvider(name, config);
+      if (provider) {
+        chain.push(provider);
+        tried.add(name);
+      }
+    }
+
+    if (chain.length === 0) {
+      const allProviders = ["openai", "anthropic", "google", "local"];
+      for (const name of allProviders) {
+        if (tried.has(name)) continue;
+        const provider = createProvider(name, config);
+        if (provider) {
+          chain.push(provider);
+          tried.add(name);
+        }
+      }
+    }
+
+    return chain;
+  }, [config]);
 
   const handleSubmit = useCallback(
     async (text: string) => {
+      if (isStreaming) return;
+
       const cmdResult = executeCommand(text, cmdCtx);
       if (cmdResult) {
         if (cmdResult.action === "exit") return;
@@ -106,18 +174,24 @@ function GrentuApp() {
       setIsStreaming(true);
       setStreamingText("");
 
-      const provider = getProvider();
-      if (!provider) {
+      const providers = getProviderChain();
+      if (providers.length === 0) {
+        setSystemMsg(
+          "No API key found. Set OPENAI_API_KEY / ANTHROPIC_API_KEY / GOOGLE_API_KEY env var or configure in ~/.grentu/config.json",
+        );
         setIsStreaming(false);
         return;
       }
 
+      const controller = new AbortController();
+      abortRef.current = controller;
+
       const llmMessages: ChatMessageLLM[] = [
         {
           role: "system",
-          content: `You are Grentu Code, an AI coding assistant running in the terminal. Version ${GRENTU_VERSION}. Help the user with coding tasks, answer questions, and provide clear explanations.`,
+          content: `You are Grentu Code, an AI coding assistant running in the terminal. Version ${VERSION}. Help the user with coding tasks, answer questions, and provide clear explanations.`,
         },
-        ...messages
+        ...messagesRef.current
           .filter((m) => m.role !== "system")
           .map((m) => ({
             role: m.role as "user" | "assistant",
@@ -126,35 +200,59 @@ function GrentuApp() {
         { role: "user", content: text },
       ];
 
-      await provider.stream(llmMessages, config.model, {
-        onToken: (token) => {
-          setStreamingText((prev) => prev + token);
-        },
-        onComplete: (fullText) => {
-          setMessages((m) => [
-            ...m,
-            { id: `a-${Date.now()}`, role: "assistant", content: fullText },
-          ]);
-          setStreamingText("");
-          setIsStreaming(false);
-        },
-        onError: (err) => {
-          setSystemMsg(`Error: ${err.message}`);
-          setIsStreaming(false);
-          setStreamingText("");
-        },
-      });
+      const streamParams: StreamParams = {
+        ...(config.temperature !== undefined && { temperature: config.temperature }),
+        ...(config.maxTokens !== undefined && { maxTokens: config.maxTokens }),
+      };
+
+      let succeeded = false;
+
+      for (let i = 0; i < providers.length && !succeeded; i++) {
+        const provider = providers[i];
+        const providerModel =
+          i === 0 ? config.model : (config.providers?.[provider.name]?.defaultModel ?? provider.models[0]);
+
+        await provider.stream(llmMessages, providerModel, {
+          signal: controller.signal,
+          onToken: (token) => {
+            setStreamingText((prev) => prev + token);
+          },
+          onComplete: (fullText) => {
+            if (controller.signal.aborted) return;
+            setMessages((m) => [
+              ...m,
+              { id: `a-${Date.now()}`, role: "assistant", content: fullText },
+            ]);
+            setStreamingText("");
+            setIsStreaming(false);
+            succeeded = true;
+          },
+          onError: (err) => {
+            if (controller.signal.aborted) return;
+            if (i < providers.length - 1) {
+              setStreamingText("");
+              return;
+            }
+            setSystemMsg(`Error: ${err.message}`);
+            setIsStreaming(false);
+            setStreamingText("");
+          },
+        }, streamParams);
+      }
     },
-    [cmdCtx, config.model, getProvider, messages],
+    [cmdCtx, config.model, config.temperature, config.maxTokens, config.providers, getProviderChain, isStreaming, messagesRef, abortRef],
   );
 
   const handleCancel = useCallback(() => {
     if (isStreaming) {
+      abortRef.current?.abort();
       setIsStreaming(false);
       setStreamingText("");
       setSystemMsg("Cancelled.");
+    } else {
+      exitApp();
     }
-  }, [isStreaming]);
+  }, [isStreaming, exitApp, abortRef]);
 
   useInput((input, key) => {
     if (needsOnboarding) return;

@@ -1,6 +1,6 @@
 {
   "name": "@grentu/grentu",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Grentu Code — AI coding agent for the terminal",
   "type": "module",
   "bin": {
@@ -40,20 +40,22 @@
     "registry": "https://registry.npmjs.org/"
   },
   "dependencies": {
-    "ink": "^5.0.1",
-    "react": "^18.3.1",
-    "openai": "^4.77.0",
+    "@anthropic-ai/sdk": "^0.106.0",
+    "@google/generative-ai": "^0.24.1",
     "chalk": "^5.4.1",
     "cli-cursor": "^4.0.0",
+    "ink": "^5.0.1",
+    "openai": "^4.77.0",
+    "react": "^18.3.1",
     "yaml": "^2.7.0"
   },
   "devDependencies": {
     "@types/react": "^18.3.18",
-    "typescript": "^5.7.3",
-    "tsup": "^8.3.6",
-    "eslint": "^9.18.0",
     "@typescript-eslint/eslint-plugin": "^8.21.0",
     "@typescript-eslint/parser": "^8.21.0",
-    "prettier": "^3.4.2"
+    "eslint": "^9.18.0",
+    "prettier": "^3.4.2",
+    "tsup": "^8.3.6",
+    "typescript": "^5.7.3"
   }
 }

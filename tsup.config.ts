@@ -11,5 +11,5 @@ export default defineConfig({
   dts: false,
   splitting: false,
   shims: true,
-  external: ["ink", "react", "openai", "chalk", "cli-cursor", "yaml"],
+  external: ["ink", "react", "openai", "@anthropic-ai/sdk", "@google/generative-ai", "chalk", "cli-cursor", "yaml"],
 });

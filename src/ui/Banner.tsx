@@ -1,5 +1,6 @@
 import React from "react";
 import { Text } from "ink";
+import { VERSION } from "../version";
 
 const BANNER = String.raw`
   ██████  ██████  ███████ ███    ██ ████████ ██    ██
@@ -9,7 +10,6 @@ const BANNER = String.raw`
   ██████  ██   ██ ███████ ██   ████    ██     ██████
 `;
 
-const VERSION = "v0.1.0";
 const TAGLINE = "AI coding agent";
 
 interface BannerProps {

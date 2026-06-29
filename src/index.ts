@@ -1,6 +1,6 @@
 import { run } from "./ui/App";
 
-if (!process.stdin.isTTY) {
+if (!process.stdin.isTTY || !process.stdout.isTTY) {
   console.error("Grentu Code requires an interactive terminal (TTY).");
   console.error("Run `grentu` directly in your terminal, not through a pipe.");
   process.exit(1);
