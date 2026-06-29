@@ -88,16 +88,27 @@ export async function scanCustomModels(
   endpoint: string,
   apiKey: string,
 ): Promise<string[]> {
-  const baseUrl = endpoint.replace(/\/+$/, "");
+  let base = endpoint.trim().replace(/\/+$/, "");
+  if (!base.startsWith("http://") && !base.startsWith("https://")) {
+    base = "https://" + base;
+  }
+
   const endpoints = [
-    baseUrl,
-    baseUrl.replace(/\/v1$/, ""),
-    baseUrl.replace(/\/v1\/?$/, "") + "/v1",
-  ].filter((v, i, a) => a.indexOf(v) === i);
+    base,
+    base + "/v1",
+    base.replace(/\/v1\/?$/, ""),
+    base.replace(/\/v1\/?$/, "") + "/v1",
+  ];
+  const seen = new Set<string>();
+  const unique = endpoints.filter((ep) => {
+    if (seen.has(ep)) return false;
+    seen.add(ep);
+    return true;
+  });
 
   let lastError: Error | null = null;
 
-  for (const ep of endpoints) {
+  for (const ep of unique) {
     try {
       const client = new OpenAI({ apiKey, baseURL: ep });
       const response = await client.models.list();
@@ -105,11 +116,12 @@ export async function scanCustomModels(
         .map((m) => m.id)
         .filter((id): id is string => Boolean(id))
         .sort((a, b) => a.localeCompare(b));
-      return models;
+      if (models.length > 0) return models;
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
     }
   }
 
-  throw lastError ?? new Error("Failed to scan models");
+  if (lastError) throw lastError;
+  return [];
 }
