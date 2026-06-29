@@ -7,6 +7,8 @@ import { Messages } from "./Messages";
 import type { ChatMessage } from "./Messages";
 import { Spinner } from "./Spinner";
 import { getTheme } from "./theme";
+import { ProviderSetup } from "./ProviderSetup";
+import type { ProviderSetupData } from "./ProviderSetup";
 import { executeCommand, type CommandContext } from "../commands/registry";
 import {
   configExists,
@@ -14,7 +16,7 @@ import {
   saveConfig,
   type GrentuConfig,
 } from "../config";
-import { createProvider } from "../providers/registry";
+import { createProvider, getCustomProviderNames, PROVIDER_NAMES } from "../providers/registry";
 import type { LLMProvider, ChatMessageLLM, StreamParams } from "../providers/base";
 import { VERSION } from "../version";
 
@@ -26,6 +28,7 @@ function GrentuApp() {
   const [streamingText, setStreamingText] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [systemMsg, setSystemMsg] = useState<string | null>(null);
+  const [providerSetup, setProviderSetup] = useState(false);
 
   const messagesRef = useRef<ChatMessage[]>([]);
   const abortRef = useRef<AbortController | null>(null);
@@ -89,25 +92,78 @@ function GrentuApp() {
     });
   }, []);
 
-  const cmdCtx: CommandContext = useMemo(() => ({
-    model: config.model,
-    provider: config.provider,
-    theme: config.theme,
-    availableProviders: ["openai", "anthropic", "google", "local"],
-    getProviderModels: (name: string) => {
-      const providerConfig = config.providers?.[name];
-      if (providerConfig?.models && providerConfig.models.length > 0) {
-        return providerConfig.models;
+  const handleRemoveProvider = useCallback((name: string): boolean => {
+    let success = false;
+    setConfig((c) => {
+      if (!c.providers || !(name in c.providers)) return c;
+      if (["openai", "anthropic", "google", "local"].includes(name)) return c;
+
+      const newProviders = { ...c.providers };
+      delete newProviders[name];
+
+      let updated: GrentuConfig = { ...c, providers: newProviders };
+
+      if (c.provider === name) {
+        updated = { ...updated, provider: "openai", model: "gpt-4o" };
       }
-      const provider = createProvider(name, config);
-      return provider ? provider.models : [];
-    },
-    setTheme: handleSetTheme,
-    setModel: handleSetModel,
-    setProvider: handleSetProvider,
-    clearMessages: handleClear,
-    exit: handleExit,
-  }), [config.model, config.provider, config.theme, config.providers, handleSetTheme, handleSetModel, handleSetProvider, handleClear, handleExit]);
+
+      if (c.fallback) {
+        updated = { ...updated, fallback: c.fallback.filter((f) => f !== name) };
+      }
+
+      saveConfig(updated);
+      success = true;
+      return updated;
+    });
+    return success;
+  }, []);
+
+  const handleProviderSetupComplete = useCallback((data: ProviderSetupData) => {
+    setConfig((c) => {
+      const newProviders = { ...(c.providers ?? {}), [data.name]: data.config };
+      const models = data.config.models ?? [];
+      const updated: GrentuConfig = {
+        ...c,
+        providers: newProviders,
+        provider: data.name,
+        model: models[0] ?? c.model,
+      };
+      saveConfig(updated);
+      return updated;
+    });
+    setProviderSetup(false);
+    setSystemMsg(`Custom provider '${data.name}' added and activated.`);
+  }, []);
+
+  const handleProviderSetupCancel = useCallback(() => {
+    setProviderSetup(false);
+    setSystemMsg("Provider setup cancelled.");
+  }, []);
+
+  const cmdCtx: CommandContext = useMemo(() => {
+    const customNames = getCustomProviderNames(config);
+    const availableProviders = [...PROVIDER_NAMES, ...customNames];
+    return {
+      model: config.model,
+      provider: config.provider,
+      theme: config.theme,
+      availableProviders,
+      getProviderModels: (name: string) => {
+        const providerConfig = config.providers?.[name];
+        if (providerConfig?.models && providerConfig.models.length > 0) {
+          return providerConfig.models;
+        }
+        const provider = createProvider(name, config);
+        return provider ? provider.models : [];
+      },
+      setTheme: handleSetTheme,
+      setModel: handleSetModel,
+      setProvider: handleSetProvider,
+      removeProvider: handleRemoveProvider,
+      clearMessages: handleClear,
+      exit: handleExit,
+    };
+  }, [config, handleSetTheme, handleSetModel, handleSetProvider, handleRemoveProvider, handleClear, handleExit]);
 
   const handleOnboardingComplete = useCallback((themeName: string) => {
     const newConfig = { ...config, theme: themeName };
@@ -137,7 +193,8 @@ function GrentuApp() {
     }
 
     if (chain.length === 0) {
-      const allProviders = ["openai", "anthropic", "google", "local"];
+      const customNames = getCustomProviderNames(config);
+      const allProviders = [...PROVIDER_NAMES, ...customNames];
       for (const name of allProviders) {
         if (tried.has(name)) continue;
         const provider = createProvider(name, config);
@@ -158,6 +215,11 @@ function GrentuApp() {
       const cmdResult = executeCommand(text, cmdCtx);
       if (cmdResult) {
         if (cmdResult.action === "exit") return;
+        if (cmdResult.action === "provider-add") {
+          setSystemMsg(cmdResult.output ?? null);
+          setProviderSetup(true);
+          return;
+        }
         if (cmdResult.output) {
           setSystemMsg(cmdResult.output);
         }
@@ -256,6 +318,7 @@ function GrentuApp() {
 
   useInput((input, key) => {
     if (needsOnboarding) return;
+    if (providerSetup) return;
     if (key.ctrl && input === "d") {
       handleExit();
     }
@@ -263,6 +326,16 @@ function GrentuApp() {
 
   if (needsOnboarding) {
     return React.createElement(Onboarding, { onComplete: handleOnboardingComplete });
+  }
+
+  if (providerSetup) {
+    const customNames = getCustomProviderNames(config);
+    const existing = [...PROVIDER_NAMES, ...customNames];
+    return React.createElement(ProviderSetup, {
+      existingProviders: existing,
+      onComplete: handleProviderSetupComplete,
+      onCancel: handleProviderSetupCancel,
+    });
   }
 
   return React.createElement(

@@ -10,6 +10,7 @@ export interface ProviderConfig {
   baseUrl?: string;
   models?: string[];
   defaultModel?: string;
+  custom?: boolean;
 }
 
 export interface GrentuConfig {

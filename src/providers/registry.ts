@@ -3,11 +3,23 @@ import { OpenAIProvider } from "./openai";
 import { AnthropicProvider } from "./anthropic";
 import { GoogleProvider } from "./google";
 import { LocalProvider } from "./local";
+import { CustomProvider } from "./custom";
 import type { GrentuConfig } from "../config";
 
 export type ProviderName = "openai" | "anthropic" | "google" | "local";
 
 export const PROVIDER_NAMES: ProviderName[] = ["openai", "anthropic", "google", "local"];
+
+export const BUILTIN_PROVIDERS = new Set<string>(PROVIDER_NAMES);
+
+export function isCustomProvider(name: string): boolean {
+  return !BUILTIN_PROVIDERS.has(name);
+}
+
+export function getCustomProviderNames(config: GrentuConfig): string[] {
+  if (!config.providers) return [];
+  return Object.keys(config.providers).filter((name) => isCustomProvider(name));
+}
 
 export function createProvider(name: string, config: GrentuConfig): LLMProvider | null {
   const providerConfig = config.providers?.[name];
@@ -44,8 +56,19 @@ export function createProvider(name: string, config: GrentuConfig): LLMProvider 
       return new LocalProvider(providerConfig?.baseUrl);
     }
 
-    default:
-      return null;
+    default: {
+      if (!isCustomProvider(name)) return null;
+      if (!providerConfig) return null;
+
+      const apiKey = providerConfig.apiKey;
+      const baseUrl = providerConfig.baseUrl;
+      if (!apiKey || !baseUrl) return null;
+
+      const models = providerConfig.models ?? [];
+      if (models.length === 0) return null;
+
+      return new CustomProvider(name, apiKey, baseUrl, models);
+    }
   }
 }
 

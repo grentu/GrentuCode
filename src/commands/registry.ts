@@ -1,5 +1,5 @@
 import { THEME_LIST, THEMES } from "../ui/theme";
-import { PROVIDER_NAMES } from "../providers/registry";
+import { PROVIDER_NAMES, BUILTIN_PROVIDERS } from "../providers/registry";
 import { getProviderModels } from "../providers/registry";
 import type { GrentuConfig } from "../config";
 
@@ -12,13 +12,14 @@ export interface CommandContext {
   setTheme: (name: string) => void;
   setModel: (name: string) => void;
   setProvider: (name: string, model?: string) => void;
+  removeProvider: (name: string) => boolean;
   clearMessages: () => void;
   exit: () => void;
 }
 
 export interface CommandResult {
   output?: string;
-  action?: "clear" | "exit" | "theme-change" | "provider-change";
+  action?: "clear" | "exit" | "theme-change" | "provider-change" | "provider-add" | "provider-remove";
 }
 
 export type CommandHandler = (args: string, ctx: CommandContext) => CommandResult;
@@ -36,7 +37,10 @@ const helpCommand: CommandHandler = (_args, ctx) => {
     "  /help     Show this help message",
     "  /clear    Clear chat history",
     `  /model    Show or change model (current: ${ctx.model})`,
-    `  /provider Show or change provider (current: ${ctx.provider})`,
+    `  /provider Show, change, add or remove providers (current: ${ctx.provider})`,
+    "            /provider add         Add a custom OpenAI-compatible provider",
+    "            /provider remove <name>  Remove a custom provider",
+    "            /provider list        List all providers",
     `  /theme    Show or change theme (current: ${ctx.theme})`,
     "  /exit     Exit Grentu Code",
     "",
@@ -68,21 +72,46 @@ const modelCommand: CommandHandler = (args, ctx) => {
 const providerCommand: CommandHandler = (args, ctx) => {
   const parts = args.trim().split(/\s+/).filter(Boolean);
 
-  if (parts.length === 0) {
+  if (parts.length === 0 || parts[0] === "list") {
     const list = ctx.availableProviders
       .map((name) => {
         const current = name === ctx.provider ? " ← current" : "";
+        const tag = BUILTIN_PROVIDERS.has(name) ? "" : " (custom)";
         const models = ctx.getProviderModels(name);
         const modelList = models.length > 0 ? models.join(", ") : "(no models)";
-        return `  ${name.padEnd(12)} ${modelList}${current}`;
+        return `  ${name.padEnd(12)} ${modelList}${tag}${current}`;
       })
       .join("\n");
     return {
-      output: `Current provider: ${ctx.provider}\n\nAvailable providers:\n${list}\n\nTo change: /provider <name> [model]`,
+      output: `Current provider: ${ctx.provider}\n\nAvailable providers:\n${list}\n\nTo change: /provider <name> [model]\nTo add custom: /provider add\nTo remove: /provider remove <name>`,
     };
   }
 
-  const name = parts[0];
+  const subcommand = parts[0];
+
+  if (subcommand === "add") {
+    return { output: "Starting custom provider setup...", action: "provider-add" };
+  }
+
+  if (subcommand === "remove") {
+    const name = parts[1];
+    if (!name) {
+      return { output: "Usage: /provider remove <name>" };
+    }
+    if (BUILTIN_PROVIDERS.has(name)) {
+      return { output: `Cannot remove built-in provider: ${name}` };
+    }
+    if (!ctx.availableProviders.includes(name)) {
+      return { output: `No custom provider named '${name}'. Available: ${ctx.availableProviders.join(", ")}` };
+    }
+    const removed = ctx.removeProvider(name);
+    if (removed) {
+      return { output: `Custom provider '${name}' removed.`, action: "provider-remove" };
+    }
+    return { output: `Failed to remove provider '${name}'.` };
+  }
+
+  const name = subcommand;
   if (!ctx.availableProviders.includes(name)) {
     return {
       output: `Unknown provider: ${name}. Available: ${ctx.availableProviders.join(", ")}`,
@@ -129,7 +158,7 @@ export const COMMANDS: Record<string, CommandDef> = {
   help: { name: "help", description: "Show help", usage: "/help", handler: helpCommand },
   clear: { name: "clear", description: "Clear chat", usage: "/clear", handler: clearCommand },
   model: { name: "model", description: "Show/change model", usage: "/model [name]", handler: modelCommand },
-  provider: { name: "provider", description: "Show/change provider", usage: "/provider [name] [model]", handler: providerCommand },
+  provider: { name: "provider", description: "Show/change/add/remove provider", usage: "/provider [add|remove <name>|list|<name> [model]]", handler: providerCommand },
   theme: { name: "theme", description: "Show/change theme", usage: "/theme [name]", handler: themeCommand },
   exit: { name: "exit", description: "Exit Grentu", usage: "/exit", handler: exitCommand },
 };
@@ -173,6 +202,7 @@ export function buildCommandContext(
     setTheme: (name: string) => void;
     setModel: (name: string) => void;
     setProvider: (name: string, model?: string) => void;
+    removeProvider: (name: string) => boolean;
     clearMessages: () => void;
     exit: () => void;
   },
@@ -186,6 +216,7 @@ export function buildCommandContext(
     setTheme: handlers.setTheme,
     setModel: handlers.setModel,
     setProvider: handlers.setProvider,
+    removeProvider: handlers.removeProvider,
     clearMessages: handlers.clearMessages,
     exit: handlers.exit,
   };
