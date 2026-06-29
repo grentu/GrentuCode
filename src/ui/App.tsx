@@ -4,7 +4,7 @@ import { Banner } from "./Banner";
 import { Onboarding } from "./Onboarding";
 import { Input } from "./Input";
 import { Messages } from "./Messages";
-import type { ChatMessage, ToolCallInfo } from "./Messages";
+import type { ChatMessage, ToolCallInfo } from "../types";
 import { Spinner } from "./Spinner";
 import { getTheme } from "./theme";
 import { ProviderMenu } from "./ProviderMenu";
@@ -24,6 +24,14 @@ import { createProvider, getCustomProviderNames, PROVIDER_NAMES, BUILTIN_PROVIDE
 import type { LLMProvider, ChatMessageLLM } from "../providers/base";
 import { runAgentLoop } from "../tools/agentLoop";
 import { VERSION } from "../version";
+import {
+  generateSessionId,
+  saveSession,
+  loadSession,
+  listSessions,
+  exportSessionMarkdown,
+  type SessionData,
+} from "../sessions";
 import * as path from "path";
 import * as fs from "fs";
 
@@ -73,6 +81,7 @@ function GrentuApp() {
   const [overlay, setOverlay] = useState<OverlayMode>(null);
   const [apiKeyTarget, setApiKeyTarget] = useState<string | null>(null);
   const [pendingPermission, setPendingPermission] = useState<PendingPermission | null>(null);
+  const [currentSessionId, setCurrentSessionId] = useState<string>(() => generateSessionId());
 
   const messagesRef = useRef<ChatMessage[]>([]);
   const abortRef = useRef<AbortController | null>(null);
@@ -93,7 +102,25 @@ function GrentuApp() {
     setMessages([]);
     setStreamingText("");
     setSystemMsg(null);
+    setCurrentSessionId(generateSessionId());
   }, []);
+
+  const saveCurrentSession = useCallback(() => {
+    const msgs = messagesRef.current;
+    if (msgs.length === 0) return;
+    const firstUserMsg = msgs.find((m) => m.role === "user");
+    const title = firstUserMsg ? firstUserMsg.content.slice(0, 50) : "Untitled";
+    const data: SessionData = {
+      id: currentSessionId,
+      title,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      provider: config.provider,
+      model: config.model,
+      messages: msgs,
+    };
+    saveSession(data);
+  }, [currentSessionId, config.provider, config.model]);
 
   const handleSetTheme = useCallback((name: string) => {
     setConfig((c) => {
@@ -305,6 +332,46 @@ function GrentuApp() {
           setSystemMsg(null);
           return;
         }
+        if (cmdResult.action === "sessions-list") {
+          const sessions = listSessions();
+          if (sessions.length === 0) {
+            setSystemMsg("No saved sessions.");
+          } else {
+            const list = sessions.slice(0, 20).map((s) => {
+              const date = s.updatedAt.slice(0, 16).replace("T", " ");
+              return `  ${s.id}  ${date}  ${s.messageCount} msgs  ${s.title}`;
+            }).join("\n");
+            setSystemMsg(`Saved sessions:\n${list}\n\nUse /resume <id> to resume, /export <id> to export`);
+          }
+          return;
+        }
+        if (cmdResult.action === "session-resume" && cmdResult.data) {
+          const session = loadSession(cmdResult.data);
+          if (!session) {
+            setSystemMsg(`Session not found: ${cmdResult.data}`);
+          } else {
+            setMessages(session.messages);
+            setCurrentSessionId(session.id);
+            setConfig((c) => ({
+              ...c,
+              provider: session.provider,
+              model: session.model,
+            }));
+            setSystemMsg(`Resumed session: ${session.title}`);
+          }
+          return;
+        }
+        if (cmdResult.action === "session-export" && cmdResult.data) {
+          const md = exportSessionMarkdown(cmdResult.data);
+          if (!md) {
+            setSystemMsg(`Session not found: ${cmdResult.data}`);
+          } else {
+            const exportPath = path.join(projectRoot, `session-${cmdResult.data}.md`);
+            fs.writeFileSync(exportPath, md, "utf-8");
+            setSystemMsg(`Session exported to: ${exportPath}`);
+          }
+          return;
+        }
         if (cmdResult.output) setSystemMsg(cmdResult.output);
         return;
       }
@@ -422,9 +489,10 @@ function GrentuApp() {
         setStreamingText("");
         setIsStreaming(false);
         abortRef.current = null;
+        saveCurrentSession();
       }
     },
-    [cmdCtx, config.model, config.temperature, config.maxTokens, getProviderInstance, isStreaming, pendingPermission, projectRoot],
+    [cmdCtx, config.model, config.temperature, config.maxTokens, getProviderInstance, isStreaming, pendingPermission, projectRoot, saveCurrentSession],
   );
 
   const handleCancel = useCallback(() => {

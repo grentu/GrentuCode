@@ -359,6 +359,16 @@ export function ProviderSetup({
     );
   }
 
+  if (step >= TOTAL_STEPS) {
+    return React.createElement(
+      Box,
+      { flexDirection: "column", gap: 1, paddingBottom: 1 },
+      React.createElement(Text, { bold: true }, "Scanning models..."),
+      React.createElement(Text, { dimColor: true }, "Please wait..."),
+      React.createElement(Text, { dimColor: true }, "Esc = cancel"),
+    );
+  }
+
   const currentStep = STEPS[step];
 
   return React.createElement(

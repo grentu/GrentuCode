@@ -19,7 +19,8 @@ export interface CommandContext {
 
 export interface CommandResult {
   output?: string;
-  action?: "clear" | "exit" | "theme-change" | "provider-change" | "provider-add" | "provider-remove" | "provider-menu";
+  action?: "clear" | "exit" | "theme-change" | "provider-change" | "provider-add" | "provider-remove" | "provider-menu" | "sessions-list" | "session-resume" | "session-export";
+  data?: string;
 }
 
 export type CommandHandler = (args: string, ctx: CommandContext) => CommandResult;
@@ -44,6 +45,9 @@ const helpCommand: CommandHandler = (_args, ctx) => {
     "            /provider list        List all providers",
     "  /connect  Alias for /provider",
     `  /theme    Show or change theme (current: ${ctx.theme})`,
+    "  /sessions List saved sessions",
+    "  /resume <id>  Resume a session",
+    "  /export <id>  Export session to markdown",
     "  /exit     Exit Grentu Code",
     "",
     "Shortcuts:",
@@ -160,12 +164,31 @@ const exitCommand: CommandHandler = (_args, ctx) => {
   return { action: "exit" };
 };
 
+const sessionsCommand: CommandHandler = (_args, _ctx) => {
+  return { action: "sessions-list" };
+};
+
+const resumeCommand: CommandHandler = (args, _ctx) => {
+  const id = args.trim();
+  if (!id) return { output: "Usage: /resume <session-id>" };
+  return { action: "session-resume", data: id };
+};
+
+const exportCommand: CommandHandler = (args, _ctx) => {
+  const id = args.trim();
+  if (!id) return { output: "Usage: /export <session-id>" };
+  return { action: "session-export", data: id };
+};
+
 export const COMMANDS: Record<string, CommandDef> = {
   help: { name: "help", description: "Show help", usage: "/help", handler: helpCommand },
   clear: { name: "clear", description: "Clear chat", usage: "/clear", handler: clearCommand },
   model: { name: "model", description: "Show/change model", usage: "/model [name]", handler: modelCommand },
   provider: { name: "provider", description: "Show/change/add/remove provider", usage: "/provider [add|remove <name>|list|<name> [model]]", handler: providerCommand },
   theme: { name: "theme", description: "Show/change theme", usage: "/theme [name]", handler: themeCommand },
+  sessions: { name: "sessions", description: "List saved sessions", usage: "/sessions", handler: sessionsCommand },
+  resume: { name: "resume", description: "Resume a session", usage: "/resume <id>", handler: resumeCommand },
+  export: { name: "export", description: "Export session to markdown", usage: "/export <id>", handler: exportCommand },
   exit: { name: "exit", description: "Exit Grentu", usage: "/exit", handler: exitCommand },
 };
 
