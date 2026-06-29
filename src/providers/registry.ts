@@ -93,14 +93,22 @@ export async function scanCustomModels(
     base = "https://" + base;
   }
 
-  const endpoints = [
-    base,
-    base + "/v1",
-    base.replace(/\/v1\/?$/, ""),
-    base.replace(/\/v1\/?$/, "") + "/v1",
-  ];
+  const variants: string[] = [base];
+
+  const withoutV1 = base.replace(/\/v1\/?$/, "");
+  const withoutInference = base.replace(/\/inference\/v1\/?$/, "");
+
+  variants.push(base + "/v1");
+  variants.push(base + "/inference/v1");
+  variants.push(withoutV1);
+  variants.push(withoutV1 + "/v1");
+  variants.push(withoutV1 + "/inference/v1");
+  variants.push(withoutInference);
+  variants.push(withoutInference + "/inference/v1");
+  variants.push(withoutInference + "/v1");
+
   const seen = new Set<string>();
-  const unique = endpoints.filter((ep) => {
+  const unique = variants.filter((ep) => {
     if (seen.has(ep)) return false;
     seen.add(ep);
     return true;
