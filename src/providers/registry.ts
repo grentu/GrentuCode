@@ -1,3 +1,4 @@
+import OpenAI from "openai";
 import type { LLMProvider } from "./base";
 import { OpenAIProvider } from "./openai";
 import { AnthropicProvider } from "./anthropic";
@@ -81,4 +82,17 @@ export function getProviderModels(name: string, config: GrentuConfig): string[] 
   const provider = createProvider(name, config);
   if (provider) return provider.models;
   return [];
+}
+
+export async function scanCustomModels(
+  endpoint: string,
+  apiKey: string,
+): Promise<string[]> {
+  const client = new OpenAI({ apiKey, baseURL: endpoint });
+  const response = await client.models.list();
+  const models = response.data
+    .map((m) => m.id)
+    .filter((id): id is string => Boolean(id))
+    .sort((a, b) => a.localeCompare(b));
+  return models;
 }

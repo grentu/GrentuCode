@@ -19,7 +19,7 @@ export interface CommandContext {
 
 export interface CommandResult {
   output?: string;
-  action?: "clear" | "exit" | "theme-change" | "provider-change" | "provider-add" | "provider-remove";
+  action?: "clear" | "exit" | "theme-change" | "provider-change" | "provider-add" | "provider-remove" | "provider-menu";
 }
 
 export type CommandHandler = (args: string, ctx: CommandContext) => CommandResult;
@@ -38,9 +38,11 @@ const helpCommand: CommandHandler = (_args, ctx) => {
     "  /clear    Clear chat history",
     `  /model    Show or change model (current: ${ctx.model})`,
     `  /provider Show, change, add or remove providers (current: ${ctx.provider})`,
+    "            /provider             Open interactive provider menu",
     "            /provider add         Add a custom OpenAI-compatible provider",
     "            /provider remove <name>  Remove a custom provider",
     "            /provider list        List all providers",
+    "  /connect  Alias for /provider",
     `  /theme    Show or change theme (current: ${ctx.theme})`,
     "  /exit     Exit Grentu Code",
     "",
@@ -72,7 +74,11 @@ const modelCommand: CommandHandler = (args, ctx) => {
 const providerCommand: CommandHandler = (args, ctx) => {
   const parts = args.trim().split(/\s+/).filter(Boolean);
 
-  if (parts.length === 0 || parts[0] === "list") {
+  if (parts.length === 0) {
+    return { action: "provider-menu" };
+  }
+
+  if (parts[0] === "list") {
     const list = ctx.availableProviders
       .map((name) => {
         const current = name === ctx.provider ? " ← current" : "";
@@ -168,6 +174,7 @@ export const COMMAND_ALIASES: Record<string, string> = {
   h: "help",
   cls: "clear",
   p: "provider",
+  connect: "provider",
 };
 
 export function parseCommand(input: string): { command: string; args: string } | null {

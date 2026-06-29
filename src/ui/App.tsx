@@ -7,8 +7,11 @@ import { Messages } from "./Messages";
 import type { ChatMessage } from "./Messages";
 import { Spinner } from "./Spinner";
 import { getTheme } from "./theme";
+import { ProviderMenu } from "./ProviderMenu";
+import { RemoveProviderMenu } from "./RemoveProviderMenu";
 import { ProviderSetup } from "./ProviderSetup";
 import type { ProviderSetupData } from "./ProviderSetup";
+import { ApiKeyInput } from "./ApiKeyInput";
 import { executeCommand, type CommandContext } from "../commands/registry";
 import {
   configExists,
@@ -16,9 +19,11 @@ import {
   saveConfig,
   type GrentuConfig,
 } from "../config";
-import { createProvider, getCustomProviderNames, PROVIDER_NAMES } from "../providers/registry";
+import { createProvider, getCustomProviderNames, PROVIDER_NAMES, BUILTIN_PROVIDERS } from "../providers/registry";
 import type { LLMProvider, ChatMessageLLM, StreamParams } from "../providers/base";
 import { VERSION } from "../version";
+
+type OverlayMode = "menu" | "remove" | "setup" | "apikey" | null;
 
 function GrentuApp() {
   const { exit: exitApp } = useApp();
@@ -28,7 +33,8 @@ function GrentuApp() {
   const [streamingText, setStreamingText] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [systemMsg, setSystemMsg] = useState<string | null>(null);
-  const [providerSetup, setProviderSetup] = useState(false);
+  const [overlay, setOverlay] = useState<OverlayMode>(null);
+  const [apiKeyTarget, setApiKeyTarget] = useState<string | null>(null);
 
   const messagesRef = useRef<ChatMessage[]>([]);
   const abortRef = useRef<AbortController | null>(null);
@@ -74,15 +80,15 @@ function GrentuApp() {
       } else {
         const providerModels = c.providers?.[name]?.models;
         if (providerModels && providerModels.length > 0) {
-          updated = { ...updated, model: providerModels[0] };
+          const defaultModel = c.providers?.[name]?.defaultModel;
+          const targetModel = defaultModel && providerModels.includes(defaultModel)
+            ? defaultModel
+            : providerModels[0];
+          updated = { ...updated, model: targetModel };
         } else {
           const provider = createProvider(name, c);
           if (provider && provider.models.length > 0) {
-            const defaultModel = c.providers?.[name]?.defaultModel;
-            const targetModel = defaultModel && provider.models.includes(defaultModel)
-              ? defaultModel
-              : provider.models[0];
-            updated = { ...updated, model: targetModel };
+            updated = { ...updated, model: provider.models[0] };
           }
         }
       }
@@ -96,7 +102,7 @@ function GrentuApp() {
     let success = false;
     setConfig((c) => {
       if (!c.providers || !(name in c.providers)) return c;
-      if (["openai", "anthropic", "google", "local"].includes(name)) return c;
+      if (BUILTIN_PROVIDERS.has(name)) return c;
 
       const newProviders = { ...c.providers };
       delete newProviders[name];
@@ -126,18 +132,99 @@ function GrentuApp() {
         ...c,
         providers: newProviders,
         provider: data.name,
-        model: models[0] ?? c.model,
+        model: data.config.defaultModel ?? models[0] ?? c.model,
       };
       saveConfig(updated);
       return updated;
     });
-    setProviderSetup(false);
+    setOverlay(null);
     setSystemMsg(`Custom provider '${data.name}' added and activated.`);
   }, []);
 
   const handleProviderSetupCancel = useCallback(() => {
-    setProviderSetup(false);
+    setOverlay(null);
     setSystemMsg("Provider setup cancelled.");
+  }, []);
+
+  const handleApiKeyComplete = useCallback((apiKey: string) => {
+    if (!apiKeyTarget) return;
+    setConfig((c) => {
+      const newProviders = {
+        ...(c.providers ?? {}),
+        [apiKeyTarget]: {
+          ...(c.providers?.[apiKeyTarget] ?? {}),
+          apiKey,
+        },
+      };
+      const updated: GrentuConfig = {
+        ...c,
+        providers: newProviders,
+        provider: apiKeyTarget,
+      };
+
+      const envMap: Record<string, string> = {
+        openai: "gpt-4o",
+        anthropic: "claude-sonnet-4-20250514",
+        google: "gemini-2.0-flash",
+      };
+      if (envMap[apiKeyTarget]) {
+        updated.model = envMap[apiKeyTarget];
+      }
+
+      saveConfig(updated);
+      return updated;
+    });
+    setOverlay(null);
+    setSystemMsg(`Provider '${apiKeyTarget}' configured and activated.`);
+    setApiKeyTarget(null);
+  }, [apiKeyTarget]);
+
+  const handleApiKeyCancel = useCallback(() => {
+    setOverlay(null);
+    setApiKeyTarget(null);
+    setSystemMsg("API key input cancelled.");
+  }, []);
+
+  const handleMenuSelect = useCallback((providerName: string) => {
+    if (BUILTIN_PROVIDERS.has(providerName) && providerName !== "local") {
+      const pc = config.providers?.[providerName];
+      const envKey = providerName === "openai" ? process.env.OPENAI_API_KEY
+        : providerName === "anthropic" ? process.env.ANTHROPIC_API_KEY
+        : providerName === "google" ? process.env.GOOGLE_API_KEY
+        : undefined;
+
+      if (!pc?.apiKey && !envKey) {
+        setApiKeyTarget(providerName);
+        setOverlay("apikey");
+        return;
+      }
+    }
+
+    handleSetProvider(providerName);
+    setOverlay(null);
+    setSystemMsg(`Provider switched to '${providerName}'.`);
+  }, [config.providers, handleSetProvider]);
+
+  const handleMenuAddCustom = useCallback(() => {
+    setOverlay("setup");
+  }, []);
+
+  const handleMenuRemove = useCallback(() => {
+    setOverlay("remove");
+  }, []);
+
+  const handleMenuCancel = useCallback(() => {
+    setOverlay(null);
+  }, []);
+
+  const handleRemoveProviderMenuRemove = useCallback((name: string) => {
+    handleRemoveProvider(name);
+    setOverlay(null);
+    setSystemMsg(`Custom provider '${name}' removed.`);
+  }, [handleRemoveProvider]);
+
+  const handleRemoveProviderMenuBack = useCallback(() => {
+    setOverlay("menu");
   }, []);
 
   const cmdCtx: CommandContext = useMemo(() => {
@@ -215,9 +302,14 @@ function GrentuApp() {
       const cmdResult = executeCommand(text, cmdCtx);
       if (cmdResult) {
         if (cmdResult.action === "exit") return;
+        if (cmdResult.action === "provider-menu") {
+          setOverlay("menu");
+          setSystemMsg(null);
+          return;
+        }
         if (cmdResult.action === "provider-add") {
-          setSystemMsg(cmdResult.output ?? null);
-          setProviderSetup(true);
+          setOverlay("setup");
+          setSystemMsg(null);
           return;
         }
         if (cmdResult.output) {
@@ -239,7 +331,7 @@ function GrentuApp() {
       const providers = getProviderChain();
       if (providers.length === 0) {
         setSystemMsg(
-          "No API key found. Set OPENAI_API_KEY / ANTHROPIC_API_KEY / GOOGLE_API_KEY env var or configure in ~/.grentu/config.json",
+          "No API key found. Set OPENAI_API_KEY / ANTHROPIC_API_KEY / GOOGLE_API_KEY env var or use /provider to configure",
         );
         setIsStreaming(false);
         return;
@@ -318,7 +410,7 @@ function GrentuApp() {
 
   useInput((input, key) => {
     if (needsOnboarding) return;
-    if (providerSetup) return;
+    if (overlay) return;
     if (key.ctrl && input === "d") {
       handleExit();
     }
@@ -328,13 +420,50 @@ function GrentuApp() {
     return React.createElement(Onboarding, { onComplete: handleOnboardingComplete });
   }
 
-  if (providerSetup) {
+  if (overlay === "menu") {
+    return React.createElement(ProviderMenu, {
+      config,
+      onSelect: handleMenuSelect,
+      onAddCustom: handleMenuAddCustom,
+      onRemove: handleMenuRemove,
+      onCancel: handleMenuCancel,
+      primaryColor: theme.primary,
+      secondaryColor: theme.secondary,
+      mutedColor: theme.muted,
+      accentColor: theme.accent,
+    });
+  }
+
+  if (overlay === "remove") {
+    return React.createElement(RemoveProviderMenu, {
+      config,
+      onRemove: handleRemoveProviderMenuRemove,
+      onBack: handleRemoveProviderMenuBack,
+      primaryColor: theme.primary,
+      mutedColor: theme.muted,
+      accentColor: theme.accent,
+    });
+  }
+
+  if (overlay === "setup") {
     const customNames = getCustomProviderNames(config);
     const existing = [...PROVIDER_NAMES, ...customNames];
     return React.createElement(ProviderSetup, {
       existingProviders: existing,
       onComplete: handleProviderSetupComplete,
       onCancel: handleProviderSetupCancel,
+      primaryColor: theme.primary,
+      secondaryColor: theme.secondary,
+      mutedColor: theme.muted,
+      accentColor: theme.accent,
+    });
+  }
+
+  if (overlay === "apikey" && apiKeyTarget) {
+    return React.createElement(ApiKeyInput, {
+      providerName: apiKeyTarget,
+      onComplete: handleApiKeyComplete,
+      onCancel: handleApiKeyCancel,
     });
   }
 
