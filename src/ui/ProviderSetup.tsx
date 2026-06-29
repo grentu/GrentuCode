@@ -82,18 +82,19 @@ export function ProviderSetup({
   const doScan = useCallback(async (endpoint: string, apiKey: string) => {
     setScanning(true);
     setScanError(null);
+    setManualMode(false);
+    setModels([]);
     try {
       const found = await scanCustomModels(endpoint, apiKey);
       if (found.length === 0) {
-        setScanError("No models found at this endpoint");
-        setManualMode(true);
+        setScanError("No models found at this endpoint. Check if the API supports /v1/models or enter models manually.");
       } else {
         setModels(found);
         setSelectedModel(0);
       }
     } catch (err) {
-      setScanError(err instanceof Error ? err.message : String(err));
-      setManualMode(true);
+      const msg = err instanceof Error ? err.message : String(err);
+      setScanError(msg);
     } finally {
       setScanning(false);
     }
@@ -300,9 +301,10 @@ export function ProviderSetup({
     return React.createElement(
       Box,
       { flexDirection: "column", gap: 1, paddingBottom: 1 },
-      React.createElement(Text, { bold: true, color: "red" }, "Scan failed"),
+      React.createElement(Text, { bold: true, color: "red" }, "✗ Scan failed"),
       React.createElement(Text, { color: "red", dimColor: true }, `  ${scanError}`),
-      React.createElement(Text, { dimColor: true }, "\nR = retry scan  M = enter models manually  Esc = cancel"),
+      React.createElement(Text, { dimColor: true }, ""),
+      React.createElement(Text, { dimColor: true }, "R = retry scan  M = enter models manually  Esc = cancel"),
     );
   }
 

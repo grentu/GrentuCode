@@ -88,11 +88,28 @@ export async function scanCustomModels(
   endpoint: string,
   apiKey: string,
 ): Promise<string[]> {
-  const client = new OpenAI({ apiKey, baseURL: endpoint });
-  const response = await client.models.list();
-  const models = response.data
-    .map((m) => m.id)
-    .filter((id): id is string => Boolean(id))
-    .sort((a, b) => a.localeCompare(b));
-  return models;
+  const baseUrl = endpoint.replace(/\/+$/, "");
+  const endpoints = [
+    baseUrl,
+    baseUrl.replace(/\/v1$/, ""),
+    baseUrl.replace(/\/v1\/?$/, "") + "/v1",
+  ].filter((v, i, a) => a.indexOf(v) === i);
+
+  let lastError: Error | null = null;
+
+  for (const ep of endpoints) {
+    try {
+      const client = new OpenAI({ apiKey, baseURL: ep });
+      const response = await client.models.list();
+      const models = response.data
+        .map((m) => m.id)
+        .filter((id): id is string => Boolean(id))
+        .sort((a, b) => a.localeCompare(b));
+      return models;
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+    }
+  }
+
+  throw lastError ?? new Error("Failed to scan models");
 }
