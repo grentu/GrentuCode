@@ -1,0 +1,27 @@
+{
+  "name": "grentucode",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Multi-agent coding orchestrator — a hierarchy of neural nets that plan, write, review and accept code under budget, with human escalation as the single safety sink.",
+  "bin": {
+    "grentu": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/cli.ts",
+    "demo": "tsx src/cli.ts demo",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}
